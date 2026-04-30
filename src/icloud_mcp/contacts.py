@@ -1,5 +1,6 @@
 """CardDAV tools for contacts management using direct HTTP/WebDAV requests."""
 
+import sys
 import requests
 from requests.auth import HTTPBasicAuth
 import vobject
@@ -123,7 +124,7 @@ def _fetch_all_vcards(session: requests.Session, addressbook_url: str) -> List[D
         response = session.request('REPORT', addressbook_url, data=query_body, headers={'Depth': '1'})
         response.raise_for_status()
     except Exception as e:
-        print(f"Error fetching vCards: {str(e)}")
+        print(f"Error fetching vCards: {str(e)}", file=sys.stderr)
         return []
     
     # Parse XML response
@@ -144,8 +145,8 @@ def _fetch_all_vcards(session: requests.Session, addressbook_url: str) -> List[D
                     'etag': etag_elem.text if etag_elem is not None else ''
                 })
     except Exception as e:
-        print(f"Error parsing vCards: {str(e)}")
-    
+        print(f"Error parsing vCards: {str(e)}", file=sys.stderr)
+
     return vcards
 
 
@@ -234,7 +235,7 @@ async def list_contacts(
                     count += 1
             
             except Exception as e:
-                print(f"Error parsing vCard: {str(e)}")
+                print(f"Error parsing vCard: {str(e)}", file=sys.stderr)
                 continue
         
         return result
