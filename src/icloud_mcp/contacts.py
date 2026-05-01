@@ -231,25 +231,26 @@ async def list_contacts(
                     "phones": [],
                     "emails": [],
                     "addresses": [],
+                    "birthday": "",
                     "url": vcard_data['url']
                 }
-                
+
                 # Extract name
                 if hasattr(vcard, 'fn') and vcard.fn and hasattr(vcard.fn, 'value'):
                     contact["name"] = str(vcard.fn.value)
-                
+
                 # Extract phone numbers
                 if hasattr(vcard, 'tel_list'):
                     for tel in vcard.tel_list:
                         if hasattr(tel, 'value') and tel.value:
                             contact["phones"].append(str(tel.value))
-                
+
                 # Extract emails
                 if hasattr(vcard, 'email_list'):
                     for em in vcard.email_list:
                         if hasattr(em, 'value') and em.value:
                             contact["emails"].append(str(em.value))
-                
+
                 # Extract addresses
                 if hasattr(vcard, 'adr_list'):
                     for adr in vcard.adr_list:
@@ -260,7 +261,12 @@ async def list_contacts(
                                     contact["addresses"].append(addr_str)
                             except Exception as _e:
                                 continue
-                
+
+                # Extract birthday (vCard BDAY field, typically YYYY-MM-DD;
+                # may be "--MM-DD" for partial dates without a year).
+                if hasattr(vcard, 'bday') and vcard.bday and hasattr(vcard.bday, 'value'):
+                    contact["birthday"] = str(vcard.bday.value)
+
                 # Only add contact if it has a name or at least one other field
                 if contact["name"] or contact["phones"] or contact["emails"]:
                     result.append(contact)
@@ -303,26 +309,27 @@ async def get_contact(context: Context, contact_id: str) -> Dict[str, Any]:
             "addresses": [],
             "organization": str(vcard.org.value[0]) if hasattr(vcard, 'org') and vcard.org.value else "",
             "title": str(vcard.title.value) if hasattr(vcard, 'title') else "",
+            "birthday": str(vcard.bday.value) if hasattr(vcard, 'bday') and vcard.bday else "",
             "url": contact_id
         }
-        
+
         # Extract phone numbers
         if hasattr(vcard, 'tel_list'):
             for tel in vcard.tel_list:
                 contact["phones"].append(str(tel.value))
-        
+
         # Extract emails
         if hasattr(vcard, 'email_list'):
             for em in vcard.email_list:
                 contact["emails"].append(str(em.value))
-        
+
         # Extract addresses
         if hasattr(vcard, 'adr_list'):
             for adr in vcard.adr_list:
                 contact["addresses"].append(_address_value_str(adr.value))
 
         return contact
-    
+
     except Exception as e:
         raise ValueError(f"Failed to get contact: {str(e)}")
 
@@ -334,7 +341,8 @@ async def create_contact(
     emails: Optional[List[str]] = None,
     addresses: Optional[List[str]] = None,
     organization: Optional[str] = None,
-    title: Optional[str] = None
+    title: Optional[str] = None,
+    birthday: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Create a new contact.
@@ -346,6 +354,9 @@ async def create_contact(
         addresses: List of postal addresses (optional)
         organization: Company/organization name (optional)
         title: Job title (optional)
+        birthday: Birth date in vCard format — typically "YYYY-MM-DD"
+            for full dates, or "--MM-DD" when the year is unknown
+            (optional).
 
     Returns:
         Created contact details
@@ -404,20 +415,24 @@ async def create_contact(
         # Add title
         if title:
             vcard.add('title').value = title
-        
+
+        # Add birthday
+        if birthday:
+            vcard.add('bday').value = birthday
+
         # Serialize vCard
         vcard_data = vcard.serialize()
-        
+
         # PUT vCard to server
         contact_url = f"{addressbook_url}{unique_id}.vcf"
-        
+
         response = session.put(
             contact_url,
             data=vcard_data,
             headers={'Content-Type': 'text/vcard; charset=utf-8'}
         )
         response.raise_for_status()
-        
+
         return {
             "id": contact_url,
             "name": name,
@@ -426,9 +441,10 @@ async def create_contact(
             "addresses": addresses or [],
             "organization": organization or "",
             "title": title or "",
+            "birthday": birthday or "",
             "url": contact_url
         }
-    
+
     except Exception as e:
         raise ValueError(f"Failed to create contact: {str(e)}")
 
@@ -441,7 +457,8 @@ async def update_contact(
     emails: Optional[List[str]] = None,
     addresses: Optional[List[str]] = None,
     organization: Optional[str] = None,
-    title: Optional[str] = None
+    title: Optional[str] = None,
+    birthday: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Update an existing contact.
@@ -454,6 +471,9 @@ async def update_contact(
         addresses: New list of postal addresses (optional)
         organization: New company/organization (optional)
         title: New job title (optional)
+        birthday: New birth date — "YYYY-MM-DD" or "--MM-DD". Pass an
+            empty string to remove an existing birthday; pass None
+            (default) to leave it unchanged (optional).
 
     Returns:
         Updated contact details
@@ -548,7 +568,16 @@ async def update_contact(
                 vcard.title.value = title
             else:
                 vcard.add('title').value = title
-        
+
+        if birthday is not None:
+            # Drop the existing BDAY first so the rewrite is unambiguous,
+            # then add only if a non-empty value was passed (empty string
+            # is the documented "remove birthday" signal).
+            if hasattr(vcard, 'bday'):
+                vcard.remove(vcard.bday)
+            if birthday:
+                vcard.add('bday').value = birthday
+
         # Serialize and PUT back
         vcard_data = vcard.serialize()
         
@@ -572,6 +601,7 @@ async def update_contact(
             "addresses": [],
             "organization": str(vcard.org.value[0]) if hasattr(vcard, 'org') and vcard.org.value else "",
             "title": str(vcard.title.value) if hasattr(vcard, 'title') else "",
+            "birthday": str(vcard.bday.value) if hasattr(vcard, 'bday') and vcard.bday else "",
             "url": contact_id,
         }
 

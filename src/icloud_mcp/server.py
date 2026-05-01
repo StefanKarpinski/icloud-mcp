@@ -212,7 +212,8 @@ async def contacts_create(
     emails: list[str] = None,
     addresses: list[str] = None,
     organization: str = None,
-    title: str = None
+    title: str = None,
+    birthday: str = None
 ) -> dict:
     """
     Create a new contact.
@@ -224,9 +225,11 @@ async def contacts_create(
         addresses: List of postal addresses (optional)
         organization: Company/organization name (optional)
         title: Job title (optional)
+        birthday: Birth date — "YYYY-MM-DD" for full dates, "--MM-DD"
+            when the year is unknown (optional)
     """
     try:
-        return await contacts.create_contact(context, name, phones, emails, addresses, organization, title)
+        return await contacts.create_contact(context, name, phones, emails, addresses, organization, title, birthday)
     except AuthenticationError as e:
         return {"error": str(e), "status": 401}
     except Exception as e:
@@ -242,7 +245,8 @@ async def contacts_update(
     emails: list[str] = None,
     addresses: list[str] = None,
     organization: str = None,
-    title: str = None
+    title: str = None,
+    birthday: str = None
 ) -> dict:
     """
     Update an existing contact.
@@ -255,9 +259,12 @@ async def contacts_update(
         addresses: New list of postal addresses (optional)
         organization: New company/organization (optional)
         title: New job title (optional)
+        birthday: New birth date — "YYYY-MM-DD" or "--MM-DD".
+            Pass an empty string to remove an existing birthday;
+            omit (default None) to leave it unchanged (optional)
     """
     try:
-        return await contacts.update_contact(context, contact_id, name, phones, emails, addresses, organization, title)
+        return await contacts.update_contact(context, contact_id, name, phones, emails, addresses, organization, title, birthday)
     except AuthenticationError as e:
         return {"error": str(e), "status": 401}
     except Exception as e:
