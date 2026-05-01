@@ -493,17 +493,36 @@ async def update_contact(
         
         response = session.put(contact_id, data=vcard_data, headers=headers)
         response.raise_for_status()
-        
-        return {
+
+        # Read every field back from the mutated vCard so the response
+        # reflects the post-update state. Fields the caller didn't pass
+        # are left unchanged on the vCard (the conditional blocks above
+        # short-circuit when their argument is None) and the return
+        # value must show that, not the input args.
+        result = {
             "id": contact_id,
             "name": str(vcard.fn.value) if hasattr(vcard, 'fn') else "",
-            "phones": phones if phones is not None else [],
-            "emails": emails if emails is not None else [],
-            "addresses": addresses if addresses is not None else [],
-            "organization": organization or "",
-            "title": title or "",
-            "url": contact_id
+            "phones": [],
+            "emails": [],
+            "addresses": [],
+            "organization": str(vcard.org.value[0]) if hasattr(vcard, 'org') and vcard.org.value else "",
+            "title": str(vcard.title.value) if hasattr(vcard, 'title') else "",
+            "url": contact_id,
         }
+
+        if hasattr(vcard, 'tel_list'):
+            for tel in vcard.tel_list:
+                result["phones"].append(str(tel.value))
+
+        if hasattr(vcard, 'email_list'):
+            for em in vcard.email_list:
+                result["emails"].append(str(em.value))
+
+        if hasattr(vcard, 'adr_list'):
+            for adr in vcard.adr_list:
+                result["addresses"].append(str(adr.value))
+
+        return result
     
     except Exception as e:
         raise ValueError(f"Failed to update contact: {str(e)}")
