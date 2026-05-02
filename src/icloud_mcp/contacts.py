@@ -501,14 +501,24 @@ async def update_contact(
                     email_obj.type_param = 'INTERNET'
         
         if addresses is not None:
-            # Remove existing addresses
+            # Address matching by string value isn't reliable here:
+            # vobject serializes Address objects with empty city/state/zip
+            # fields as separator-trailing junk (e.g. "...\n,  ") that
+            # the input strings don't contain. Preserve params positionally
+            # instead: the n-th new address inherits the n-th old address's
+            # params (HOME / WORK / pref / etc.). Extra new entries default
+            # to no params.
+            old_address_params: List[Dict[str, Any]] = []
             if hasattr(vcard, 'adr_list'):
+                for adr in vcard.adr_list:
+                    old_address_params.append(_copy_params(adr.params))
                 for adr in list(vcard.adr_list):
                     vcard.remove(adr)
-            # Add new addresses
-            for addr in addresses:
+            for i, addr in enumerate(addresses):
                 adr = vcard.add('adr')
                 adr.value = vobject.vcard.Address(street=addr)
+                if i < len(old_address_params) and old_address_params[i]:
+                    _apply_params(adr, old_address_params[i])
         
         if organization is not None:
             if hasattr(vcard, 'org'):
