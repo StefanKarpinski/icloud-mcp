@@ -8,9 +8,25 @@ from typing import List, Dict, Any, Optional
 from fastmcp import Context
 from .auth import require_auth
 from .config import config
+import re
 import xml.etree.ElementTree as ET
 from urllib.parse import urljoin
 import uuid
+
+
+# vobject's str() of an Address with only `street` populated appends
+# the empty city/region/postal/country fields as separator-only junk
+# (e.g. "...\n,  "). iCloud stores most addresses unstructured (everything
+# in `street`), so this artifact appears on every read. Without stripping,
+# read→write→read accumulates more junk on each round-trip.
+_EMPTY_ADDRESS_FIELDS_RE = re.compile(r'(\n[ ,\t]*)+$')
+
+
+def _address_value_str(value: Any) -> str:
+    """Stringify a vobject Address, stripping vobject's trailing empty-fields artifact."""
+    if value is None:
+        return ""
+    return _EMPTY_ADDRESS_FIELDS_RE.sub('', str(value))
 
 
 def _get_carddav_session(email: str, password: str) -> tuple:
@@ -239,7 +255,7 @@ async def list_contacts(
                     for adr in vcard.adr_list:
                         if hasattr(adr, 'value'):
                             try:
-                                addr_str = str(adr.value) if adr.value else ""
+                                addr_str = _address_value_str(adr.value)
                                 if addr_str:
                                     contact["addresses"].append(addr_str)
                             except Exception as _e:
@@ -303,8 +319,8 @@ async def get_contact(context: Context, contact_id: str) -> Dict[str, Any]:
         # Extract addresses
         if hasattr(vcard, 'adr_list'):
             for adr in vcard.adr_list:
-                contact["addresses"].append(str(adr.value))
-        
+                contact["addresses"].append(_address_value_str(adr.value))
+
         return contact
     
     except Exception as e:
@@ -374,12 +390,13 @@ async def create_contact(
                 email_obj.value = em
                 email_obj.type_param = 'INTERNET'
         
-        # Add addresses
+        # Add addresses (strip vobject's empty-fields artifact from any
+        # previously-stringified input so it doesn't accumulate)
         if addresses:
             for addr in addresses:
                 adr = vcard.add('adr')
-                adr.value = vobject.vcard.Address(street=addr)
-        
+                adr.value = vobject.vcard.Address(street=_address_value_str(addr))
+
         # Add organization
         if organization:
             vcard.add('org').value = [organization]
@@ -516,7 +533,7 @@ async def update_contact(
                     vcard.remove(adr)
             for i, addr in enumerate(addresses):
                 adr = vcard.add('adr')
-                adr.value = vobject.vcard.Address(street=addr)
+                adr.value = vobject.vcard.Address(street=_address_value_str(addr))
                 if i < len(old_address_params) and old_address_params[i]:
                     _apply_params(adr, old_address_params[i])
         
@@ -568,7 +585,7 @@ async def update_contact(
 
         if hasattr(vcard, 'adr_list'):
             for adr in vcard.adr_list:
-                result["addresses"].append(str(adr.value))
+                result["addresses"].append(_address_value_str(adr.value))
 
         return result
     
