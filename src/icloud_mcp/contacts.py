@@ -24,6 +24,22 @@ def _get_carddav_session(email: str, password: str) -> tuple:
     return session, email
 
 
+def _copy_params(params: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """Deep-copy a vobject params dict (values are typically lists of strings)."""
+    if not params:
+        return {}
+    out: Dict[str, Any] = {}
+    for k, v in params.items():
+        out[k] = list(v) if isinstance(v, list) else v
+    return out
+
+
+def _apply_params(line: Any, params: Dict[str, Any]) -> None:
+    """Restore previously-captured params onto a freshly-added vobject line."""
+    for k, v in params.items():
+        line.params[k] = list(v) if isinstance(v, list) else v
+
+
 def _discover_principal(session: requests.Session, base_url: str) -> str:
     """Discover principal URL for the user."""
     propfind_body = '''<?xml version="1.0" encoding="UTF-8"?>
@@ -441,26 +457,48 @@ async def update_contact(
             vcard.fn.value = name
         
         if phones is not None:
-            # Remove existing phones
+            # Capture each existing phone's full params dict (TYPE list,
+            # 'pref' marker, X-ABLABEL, etc.) BEFORE removing so we can
+            # restore them on values that round-trip unchanged. Without
+            # this, callers following the read-then-write workflow would
+            # clobber every phone's label set down to a flat CELL on
+            # every update.
+            old_phone_params: Dict[str, Dict[str, Any]] = {}
             if hasattr(vcard, 'tel_list'):
+                for tel in vcard.tel_list:
+                    if hasattr(tel, 'value') and tel.value is not None:
+                        old_phone_params[str(tel.value)] = _copy_params(tel.params)
                 for tel in list(vcard.tel_list):
                     vcard.remove(tel)
-            # Add new phones
+            # Re-add phones, restoring full params for round-tripped
+            # values; default to TYPE=CELL for newly-added values.
             for phone in phones:
                 tel = vcard.add('tel')
                 tel.value = phone
-                tel.type_param = 'CELL'
-        
+                preserved = old_phone_params.get(str(phone))
+                if preserved:
+                    _apply_params(tel, preserved)
+                else:
+                    tel.type_param = 'CELL'
+
         if emails is not None:
-            # Remove existing emails
+            # Same params-preservation pattern as phones above (default
+            # TYPE=INTERNET for newly-added values).
+            old_email_params: Dict[str, Dict[str, Any]] = {}
             if hasattr(vcard, 'email_list'):
+                for em in vcard.email_list:
+                    if hasattr(em, 'value') and em.value is not None:
+                        old_email_params[str(em.value)] = _copy_params(em.params)
                 for em in list(vcard.email_list):
                     vcard.remove(em)
-            # Add new emails
             for em in emails:
                 email_obj = vcard.add('email')
                 email_obj.value = em
-                email_obj.type_param = 'INTERNET'
+                preserved = old_email_params.get(str(em))
+                if preserved:
+                    _apply_params(email_obj, preserved)
+                else:
+                    email_obj.type_param = 'INTERNET'
         
         if addresses is not None:
             # Remove existing addresses
