@@ -214,7 +214,11 @@ async def contacts_create(
     organization: str = None,
     title: str = None,
     birthday: str = None,
-    note: str = None
+    note: str = None,
+    urls: list[str] = None,
+    impps: list[str] = None,
+    social_profiles: list[dict] = None,
+    nickname: str = None
 ) -> dict:
     """
     Create a new contact.
@@ -230,9 +234,18 @@ async def contacts_create(
             when the year is unknown (optional)
         note: Free-form text shown in Contacts.app as the Notes pane
             (vCard NOTE field) (optional)
+        urls: List of web URLs (optional)
+        impps: List of IM URIs per RFC 4770, e.g. "xmpp:user@server"
+            (optional)
+        social_profiles: List of {service, user, url} dicts —
+            Apple's X-SOCIALPROFILE (optional)
+        nickname: Single nickname string (optional)
     """
     try:
-        return await contacts.create_contact(context, name, phones, emails, addresses, organization, title, birthday, note)
+        return await contacts.create_contact(
+            context, name, phones, emails, addresses, organization, title,
+            birthday, note, urls, impps, social_profiles, nickname
+        )
     except AuthenticationError as e:
         return {"error": str(e), "status": 401}
     except Exception as e:
@@ -250,7 +263,11 @@ async def contacts_update(
     organization: str = None,
     title: str = None,
     birthday: str = None,
-    note: str = None
+    note: str = None,
+    urls: list[str] = None,
+    impps: list[str] = None,
+    social_profiles: list[dict] = None,
+    nickname: str = None
 ) -> dict:
     """
     Update an existing contact.
@@ -269,9 +286,21 @@ async def contacts_update(
         note: New free-form text (vCard NOTE field). Pass an empty
             string to remove an existing note; omit (default None)
             to leave it unchanged (optional)
+        urls: New list of web URLs. Empty list clears; None leaves
+            unchanged (optional)
+        impps: New list of IM URIs. Empty list clears; None leaves
+            unchanged (optional)
+        social_profiles: New list of {service, user, url} dicts.
+            Empty list clears; None leaves unchanged (optional)
+        nickname: New nickname. Empty string removes; None leaves
+            unchanged (optional)
     """
     try:
-        return await contacts.update_contact(context, contact_id, name, phones, emails, addresses, organization, title, birthday, note)
+        return await contacts.update_contact(
+            context, contact_id, name, phones, emails, addresses,
+            organization, title, birthday, note, urls, impps,
+            social_profiles, nickname
+        )
     except AuthenticationError as e:
         return {"error": str(e), "status": 401}
     except Exception as e:

@@ -231,6 +231,10 @@ async def list_contacts(
                     "phones": [],
                     "emails": [],
                     "addresses": [],
+                    "urls": [],
+                    "impps": [],
+                    "social_profiles": [],
+                    "nickname": "",
                     "birthday": "",
                     "note": "",
                     "url": vcard_data['url']
@@ -272,6 +276,36 @@ async def list_contacts(
                 if hasattr(vcard, 'note') and vcard.note and hasattr(vcard.note, 'value'):
                     contact["note"] = str(vcard.note.value)
 
+                # Extract URLs (vCard URL field; multiple allowed).
+                if hasattr(vcard, 'url_list'):
+                    for u in vcard.url_list:
+                        if hasattr(u, 'value') and u.value:
+                            contact["urls"].append(str(u.value))
+
+                # Extract IMPPs (vCard IMPP field — RFC 4770 IM URIs).
+                if hasattr(vcard, 'impp_list'):
+                    for imp in vcard.impp_list:
+                        if hasattr(imp, 'value') and imp.value:
+                            contact["impps"].append(str(imp.value))
+
+                # Extract social profiles (Apple's X-SOCIALPROFILE — value is
+                # the profile URL; service in TYPE param; username in
+                # X-USER/X-USERID/X-USERNAME params).
+                for sp in vcard.contents.get('x-socialprofile', []):
+                    params = {k.upper(): v for k, v in sp.params.items()}
+                    service = (params.get('TYPE') or [""])[0]
+                    user = ((params.get('X-USER') or params.get('X-USERNAME')
+                            or params.get('X-USERID') or [""])[0])
+                    contact["social_profiles"].append({
+                        "service": str(service),
+                        "user": str(user),
+                        "url": str(sp.value) if sp.value else "",
+                    })
+
+                # Extract nickname (vCard NICKNAME — typically a single name).
+                if hasattr(vcard, 'nickname') and vcard.nickname and hasattr(vcard.nickname, 'value'):
+                    contact["nickname"] = str(vcard.nickname.value)
+
                 # Only add contact if it has a name or at least one other field
                 if contact["name"] or contact["phones"] or contact["emails"]:
                     result.append(contact)
@@ -312,6 +346,10 @@ async def get_contact(context: Context, contact_id: str) -> Dict[str, Any]:
             "phones": [],
             "emails": [],
             "addresses": [],
+            "urls": [],
+            "impps": [],
+            "social_profiles": [],
+            "nickname": str(vcard.nickname.value) if hasattr(vcard, 'nickname') and vcard.nickname else "",
             "organization": str(vcard.org.value[0]) if hasattr(vcard, 'org') and vcard.org.value else "",
             "title": str(vcard.title.value) if hasattr(vcard, 'title') else "",
             "birthday": str(vcard.bday.value) if hasattr(vcard, 'bday') and vcard.bday else "",
@@ -334,6 +372,26 @@ async def get_contact(context: Context, contact_id: str) -> Dict[str, Any]:
             for adr in vcard.adr_list:
                 contact["addresses"].append(_address_value_str(adr.value))
 
+        # Extract URLs / IMPPs / social profiles (same as list_contacts)
+        if hasattr(vcard, 'url_list'):
+            for u in vcard.url_list:
+                if hasattr(u, 'value') and u.value:
+                    contact["urls"].append(str(u.value))
+        if hasattr(vcard, 'impp_list'):
+            for imp in vcard.impp_list:
+                if hasattr(imp, 'value') and imp.value:
+                    contact["impps"].append(str(imp.value))
+        for sp in vcard.contents.get('x-socialprofile', []):
+            params = {k.upper(): v for k, v in sp.params.items()}
+            service = (params.get('TYPE') or [""])[0]
+            user = ((params.get('X-USER') or params.get('X-USERNAME')
+                    or params.get('X-USERID') or [""])[0])
+            contact["social_profiles"].append({
+                "service": str(service),
+                "user": str(user),
+                "url": str(sp.value) if sp.value else "",
+            })
+
         return contact
 
     except Exception as e:
@@ -349,7 +407,11 @@ async def create_contact(
     organization: Optional[str] = None,
     title: Optional[str] = None,
     birthday: Optional[str] = None,
-    note: Optional[str] = None
+    note: Optional[str] = None,
+    urls: Optional[List[str]] = None,
+    impps: Optional[List[str]] = None,
+    social_profiles: Optional[List[Dict[str, str]]] = None,
+    nickname: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Create a new contact.
@@ -366,6 +428,13 @@ async def create_contact(
             (optional).
         note: Free-form text (vCard NOTE field). Shows in Contacts.app
             as the "Notes" pane (optional).
+        urls: List of web URLs (homepage, profile pages, etc.) (optional).
+        impps: List of IM URIs per RFC 4770, e.g. "xmpp:user@server" (optional).
+        social_profiles: List of dicts with keys "service" (e.g.
+            "facebook"), "user" (account handle), and "url" (full
+            profile URL). Stored as Apple's X-SOCIALPROFILE field
+            with TYPE=service and X-USER=user params (optional).
+        nickname: Single nickname (vCard NICKNAME field) (optional).
 
     Returns:
         Created contact details
@@ -433,6 +502,30 @@ async def create_contact(
         if note:
             vcard.add('note').value = note
 
+        # Add URLs
+        if urls:
+            for u in urls:
+                vcard.add('url').value = u
+
+        # Add IMPP entries (RFC 4770 IM URIs)
+        if impps:
+            for imp in impps:
+                vcard.add('impp').value = imp
+
+        # Add X-SOCIALPROFILE entries (Apple-specific structured field)
+        if social_profiles:
+            for sp_dict in social_profiles:
+                sp = vcard.add('x-socialprofile')
+                sp.value = sp_dict.get('url', '')
+                svc = sp_dict.get('service')
+                user = sp_dict.get('user')
+                if svc: sp.params['TYPE'] = [svc]
+                if user: sp.params['X-USER'] = [user]
+
+        # Add nickname
+        if nickname:
+            vcard.add('nickname').value = nickname
+
         # Serialize vCard
         vcard_data = vcard.serialize()
 
@@ -452,6 +545,10 @@ async def create_contact(
             "phones": phones or [],
             "emails": emails or [],
             "addresses": addresses or [],
+            "urls": urls or [],
+            "impps": impps or [],
+            "social_profiles": social_profiles or [],
+            "nickname": nickname or "",
             "organization": organization or "",
             "title": title or "",
             "birthday": birthday or "",
@@ -473,7 +570,11 @@ async def update_contact(
     organization: Optional[str] = None,
     title: Optional[str] = None,
     birthday: Optional[str] = None,
-    note: Optional[str] = None
+    note: Optional[str] = None,
+    urls: Optional[List[str]] = None,
+    impps: Optional[List[str]] = None,
+    social_profiles: Optional[List[Dict[str, str]]] = None,
+    nickname: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Update an existing contact.
@@ -492,6 +593,14 @@ async def update_contact(
         note: New free-form text (vCard NOTE field). Pass an empty
             string to remove an existing note; pass None (default)
             to leave it unchanged (optional).
+        urls: New list of web URLs. Pass an empty list to clear;
+            None to leave unchanged (optional).
+        impps: New list of IM URIs (RFC 4770). Empty list clears;
+            None leaves unchanged (optional).
+        social_profiles: New list of {service, user, url} dicts.
+            Empty list clears; None leaves unchanged (optional).
+        nickname: New nickname. Empty string removes; None leaves
+            unchanged (optional).
 
     Returns:
         Updated contact details
@@ -604,6 +713,74 @@ async def update_contact(
             if note:
                 vcard.add('note').value = note
 
+        if urls is not None:
+            # Same params-preservation pattern as phones. URL TYPE params
+            # like 'pref' or 'home' get restored for round-tripped values.
+            old_url_params: Dict[str, Dict[str, Any]] = {}
+            if hasattr(vcard, 'url_list'):
+                for u in vcard.url_list:
+                    if hasattr(u, 'value') and u.value is not None:
+                        old_url_params[str(u.value)] = _copy_params(u.params)
+                for u in list(vcard.url_list):
+                    vcard.remove(u)
+            for url_val in urls:
+                u = vcard.add('url')
+                u.value = url_val
+                preserved = old_url_params.get(str(url_val))
+                if preserved:
+                    _apply_params(u, preserved)
+
+        if impps is not None:
+            old_impp_params: Dict[str, Dict[str, Any]] = {}
+            if hasattr(vcard, 'impp_list'):
+                for imp in vcard.impp_list:
+                    if hasattr(imp, 'value') and imp.value is not None:
+                        old_impp_params[str(imp.value)] = _copy_params(imp.params)
+                for imp in list(vcard.impp_list):
+                    vcard.remove(imp)
+            for imp_val in impps:
+                imp = vcard.add('impp')
+                imp.value = imp_val
+                preserved = old_impp_params.get(str(imp_val))
+                if preserved:
+                    _apply_params(imp, preserved)
+
+        if social_profiles is not None:
+            # X-SOCIALPROFILE is structured: value=url, TYPE=service param,
+            # X-USER=user param. Rebuild from input dicts; preserve any
+            # extra params (X-USERID, etc.) for entries whose URL matches
+            # an existing one (positional fallback when URL is empty).
+            old_sp_params: List[Dict[str, Any]] = []
+            old_sp_by_url: Dict[str, Dict[str, Any]] = {}
+            existing_sps = list(vcard.contents.get('x-socialprofile', []))
+            for sp in existing_sps:
+                params = _copy_params(sp.params)
+                old_sp_params.append(params)
+                if sp.value:
+                    old_sp_by_url[str(sp.value)] = params
+            for sp in existing_sps:
+                vcard.remove(sp)
+            for i, sp_dict in enumerate(social_profiles):
+                sp = vcard.add('x-socialprofile')
+                sp.value = sp_dict.get('url', '')
+                # Restore old params (X-USERID, etc.) for URL match, then
+                # overlay the explicit service/user from the input.
+                preserved = old_sp_by_url.get(sp.value) or (
+                    old_sp_params[i] if i < len(old_sp_params) else None
+                )
+                if preserved:
+                    _apply_params(sp, preserved)
+                svc = sp_dict.get('service')
+                user = sp_dict.get('user')
+                if svc: sp.params['TYPE'] = [svc]
+                if user: sp.params['X-USER'] = [user]
+
+        if nickname is not None:
+            if hasattr(vcard, 'nickname'):
+                vcard.remove(vcard.nickname)
+            if nickname:
+                vcard.add('nickname').value = nickname
+
         # Serialize and PUT back
         vcard_data = vcard.serialize()
         
@@ -625,6 +802,10 @@ async def update_contact(
             "phones": [],
             "emails": [],
             "addresses": [],
+            "urls": [],
+            "impps": [],
+            "social_profiles": [],
+            "nickname": str(vcard.nickname.value) if hasattr(vcard, 'nickname') and vcard.nickname else "",
             "organization": str(vcard.org.value[0]) if hasattr(vcard, 'org') and vcard.org.value else "",
             "title": str(vcard.title.value) if hasattr(vcard, 'title') else "",
             "birthday": str(vcard.bday.value) if hasattr(vcard, 'bday') and vcard.bday else "",
@@ -643,6 +824,27 @@ async def update_contact(
         if hasattr(vcard, 'adr_list'):
             for adr in vcard.adr_list:
                 result["addresses"].append(_address_value_str(adr.value))
+
+        if hasattr(vcard, 'url_list'):
+            for u in vcard.url_list:
+                if hasattr(u, 'value') and u.value:
+                    result["urls"].append(str(u.value))
+
+        if hasattr(vcard, 'impp_list'):
+            for imp in vcard.impp_list:
+                if hasattr(imp, 'value') and imp.value:
+                    result["impps"].append(str(imp.value))
+
+        for sp in vcard.contents.get('x-socialprofile', []):
+            params = {k.upper(): v for k, v in sp.params.items()}
+            service = (params.get('TYPE') or [""])[0]
+            user = ((params.get('X-USER') or params.get('X-USERNAME')
+                    or params.get('X-USERID') or [""])[0])
+            result["social_profiles"].append({
+                "service": str(service),
+                "user": str(user),
+                "url": str(sp.value) if sp.value else "",
+            })
 
         return result
     
