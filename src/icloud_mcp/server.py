@@ -213,7 +213,8 @@ async def contacts_create(
     addresses: list[str] = None,
     organization: str = None,
     title: str = None,
-    birthday: str = None
+    birthday: str = None,
+    note: str = None
 ) -> dict:
     """
     Create a new contact.
@@ -227,9 +228,11 @@ async def contacts_create(
         title: Job title (optional)
         birthday: Birth date — "YYYY-MM-DD" for full dates, "--MM-DD"
             when the year is unknown (optional)
+        note: Free-form text shown in Contacts.app as the Notes pane
+            (vCard NOTE field) (optional)
     """
     try:
-        return await contacts.create_contact(context, name, phones, emails, addresses, organization, title, birthday)
+        return await contacts.create_contact(context, name, phones, emails, addresses, organization, title, birthday, note)
     except AuthenticationError as e:
         return {"error": str(e), "status": 401}
     except Exception as e:
@@ -246,7 +249,8 @@ async def contacts_update(
     addresses: list[str] = None,
     organization: str = None,
     title: str = None,
-    birthday: str = None
+    birthday: str = None,
+    note: str = None
 ) -> dict:
     """
     Update an existing contact.
@@ -262,9 +266,12 @@ async def contacts_update(
         birthday: New birth date — "YYYY-MM-DD" or "--MM-DD".
             Pass an empty string to remove an existing birthday;
             omit (default None) to leave it unchanged (optional)
+        note: New free-form text (vCard NOTE field). Pass an empty
+            string to remove an existing note; omit (default None)
+            to leave it unchanged (optional)
     """
     try:
-        return await contacts.update_contact(context, contact_id, name, phones, emails, addresses, organization, title, birthday)
+        return await contacts.update_contact(context, contact_id, name, phones, emails, addresses, organization, title, birthday, note)
     except AuthenticationError as e:
         return {"error": str(e), "status": 401}
     except Exception as e:

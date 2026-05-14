@@ -232,6 +232,7 @@ async def list_contacts(
                     "emails": [],
                     "addresses": [],
                     "birthday": "",
+                    "note": "",
                     "url": vcard_data['url']
                 }
 
@@ -266,6 +267,10 @@ async def list_contacts(
                 # may be "--MM-DD" for partial dates without a year).
                 if hasattr(vcard, 'bday') and vcard.bday and hasattr(vcard.bday, 'value'):
                     contact["birthday"] = str(vcard.bday.value)
+
+                # Extract note (vCard NOTE field — free-form text).
+                if hasattr(vcard, 'note') and vcard.note and hasattr(vcard.note, 'value'):
+                    contact["note"] = str(vcard.note.value)
 
                 # Only add contact if it has a name or at least one other field
                 if contact["name"] or contact["phones"] or contact["emails"]:
@@ -310,6 +315,7 @@ async def get_contact(context: Context, contact_id: str) -> Dict[str, Any]:
             "organization": str(vcard.org.value[0]) if hasattr(vcard, 'org') and vcard.org.value else "",
             "title": str(vcard.title.value) if hasattr(vcard, 'title') else "",
             "birthday": str(vcard.bday.value) if hasattr(vcard, 'bday') and vcard.bday else "",
+            "note": str(vcard.note.value) if hasattr(vcard, 'note') and vcard.note else "",
             "url": contact_id
         }
 
@@ -342,7 +348,8 @@ async def create_contact(
     addresses: Optional[List[str]] = None,
     organization: Optional[str] = None,
     title: Optional[str] = None,
-    birthday: Optional[str] = None
+    birthday: Optional[str] = None,
+    note: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Create a new contact.
@@ -357,6 +364,8 @@ async def create_contact(
         birthday: Birth date in vCard format — typically "YYYY-MM-DD"
             for full dates, or "--MM-DD" when the year is unknown
             (optional).
+        note: Free-form text (vCard NOTE field). Shows in Contacts.app
+            as the "Notes" pane (optional).
 
     Returns:
         Created contact details
@@ -420,6 +429,10 @@ async def create_contact(
         if birthday:
             vcard.add('bday').value = birthday
 
+        # Add note
+        if note:
+            vcard.add('note').value = note
+
         # Serialize vCard
         vcard_data = vcard.serialize()
 
@@ -442,6 +455,7 @@ async def create_contact(
             "organization": organization or "",
             "title": title or "",
             "birthday": birthday or "",
+            "note": note or "",
             "url": contact_url
         }
 
@@ -458,7 +472,8 @@ async def update_contact(
     addresses: Optional[List[str]] = None,
     organization: Optional[str] = None,
     title: Optional[str] = None,
-    birthday: Optional[str] = None
+    birthday: Optional[str] = None,
+    note: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Update an existing contact.
@@ -474,6 +489,9 @@ async def update_contact(
         birthday: New birth date — "YYYY-MM-DD" or "--MM-DD". Pass an
             empty string to remove an existing birthday; pass None
             (default) to leave it unchanged (optional).
+        note: New free-form text (vCard NOTE field). Pass an empty
+            string to remove an existing note; pass None (default)
+            to leave it unchanged (optional).
 
     Returns:
         Updated contact details
@@ -578,6 +596,14 @@ async def update_contact(
             if birthday:
                 vcard.add('bday').value = birthday
 
+        if note is not None:
+            # Same semantics as birthday: empty string removes, non-empty
+            # replaces, None (default) leaves unchanged.
+            if hasattr(vcard, 'note'):
+                vcard.remove(vcard.note)
+            if note:
+                vcard.add('note').value = note
+
         # Serialize and PUT back
         vcard_data = vcard.serialize()
         
@@ -602,6 +628,7 @@ async def update_contact(
             "organization": str(vcard.org.value[0]) if hasattr(vcard, 'org') and vcard.org.value else "",
             "title": str(vcard.title.value) if hasattr(vcard, 'title') else "",
             "birthday": str(vcard.bday.value) if hasattr(vcard, 'bday') and vcard.bday else "",
+            "note": str(vcard.note.value) if hasattr(vcard, 'note') and vcard.note else "",
             "url": contact_id,
         }
 
